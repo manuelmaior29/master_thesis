@@ -272,6 +272,8 @@ class World(object):
 
 class SensorsManager(object):
     RESOLUTION_MULTIPLIER = 2.25
+    SEM_CURRENT_FRAME = 0
+    RGB_CURRENT_FRAME = 0
 
     def __init__(self, world, width, height):
         self.world = world
@@ -336,20 +338,28 @@ class SensorsManager(object):
         self.__listen_sensors()
          
     def __listen_sensors(self):
-        self.queue_dict['sensor.camera.rgb'] = queue.Queue()
-        self.queue_dict['sensor.camera.semantic_segmentation'] = queue.Queue()
-        self.sensor_rgb.listen(self.queue_dict['sensor.camera.rgb'].put)
-        self.sensor_semseg.listen(self.queue_dict['sensor.camera.semantic_segmentation'].put)
+        self.queue_dict['rgb'] = queue.Queue()
+        self.queue_dict['semantic_segmentation'] = queue.Queue()
+        self.sensor_rgb.listen(self.queue_dict['rgb'].put)
+        self.sensor_semseg.listen(self.queue_dict['semantic_segmentation'].put)
 
     @staticmethod
     def parse_image(data):
-        print(data)
-        array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
-        array = np.reshape(array, (data["image"].height, data["image"].width, 4))
-        array = array[:, :, :3]
-        array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
-        cv2.imwrite(f'_out/{data["image"].frame:08d}_{data["name"]}.png', array_resized)
-
+        # TODO: Parametrize hardcoded path strings
+        if data["name"] == 'semantic_segmentation':
+            array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
+            array = np.reshape(array, (data["image"].height, data["image"].width, 4))
+            array = array[:, :, 2]
+            array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\semantic_segmentation\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array_resized)
+            SensorsManager.SEM_CURRENT_FRAME += 1
+        elif data["name"] == 'rgb':
+            array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
+            array = np.reshape(array, (data["image"].height, data["image"].width, 4))
+            array = array[:, :, :3]
+            array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\rgb\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array_resized)
+            SensorsManager.RGB_CURRENT_FRAME += 1
 
 # ==============================================================================
 # -- game_loop() ---------------------------------------------------------------
@@ -358,6 +368,8 @@ class SensorsManager(object):
 def game_loop(args):
     
     world = None
+    number_of_images = 10
+
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(5.0)
@@ -372,7 +384,7 @@ def game_loop(args):
         traffic_manager.set_synchronous_mode(True)
 
         world.apply_settings()
-        for index in range(20):
+        for index in range(number_of_images):
             world.spawn_actors()
             world.world.tick()
             print(len(world.camera_manager.queue_dict.items()))

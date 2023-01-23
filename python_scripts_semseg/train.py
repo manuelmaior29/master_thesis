@@ -8,12 +8,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data import DataLoader
 from torchsummary import summary
+from tqdm import tqdm
 
 def train_epoch(model, train_loader, lr, loss_function, optimizer):
     model.train()
     batch_losses = []
     for batch_index, (inputs, targets) in enumerate(train_loader):
-        print(f'----------[Batch {batch_index}]----------')
+        # print(f'----------[Batch {batch_index}]----------')
 
         ipts = torch.autograd.Variable(inputs).cuda()
         tgts = torch.autograd.Variable(targets).cuda()
@@ -34,7 +35,7 @@ def train(model, train_loader, epochs, lr, loss_function, optimizer):
     model.train()
     epoch_losses = []
     for epoch in range(epochs):
-        print(f'----------[Epoch {epoch}]----------')
+        # print(f'----------[Epoch {epoch}]----------')
         batch_losses = train_epoch(
             model=model, 
             train_loader=train_loader, 
@@ -63,28 +64,30 @@ def main():
 
     # Model parameters
     batch_size = 4
-    epochs = 16
+    epochs = 4
     learning_rate = 0.0001
     params = utils.add_weight_decay(model, l2_value=0.0001)
-    optimizer = torch.optim.Adam(params=params, xlr=learning_rate)
+    optimizer = torch.optim.Adam(params=params, lr=learning_rate)
     loss_function = nn.CrossEntropyLoss()
 
     # Data
-    train_dataset = data.AdaptedCityscapesDataset(
-        root_path=r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real_common_ids',
+    train_dataset = data.HybridDataset(
+        root_path=r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\train',
         input_dir='rgb',
         target_dir='semantic_segmentation',
-        target_scale=None,
         transform=torchvision.transforms.Compose([
             torchvision.transforms.Resize((256, 512))
-        ])
+        ]),
+        type='real',
+        labels_mapping='cityscapes_to_common'
     )
 
     train_dataloader = DataLoader(
         dataset=train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=1
+        num_workers=1,
+        
     )
 
     # Start training

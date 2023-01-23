@@ -67,7 +67,7 @@ def main():
                 name_rgb = name.split('_')
                 name_rgb = f'{name_rgb[0]}_{name_rgb[1]}_{name_rgb[2]}_leftImg8bit.png'
                 shutil.copy(f'{input_root_folder}\\rgb\\{name_rgb}', f'{output_root_folder}\\rgb\\adcs_rgb_{index}.png')
-                cv2.imwrite(f'{output_root_folder}\\semantic_segmentation\\adcs_semseg_{index}.png', id_mapped_image)
+                cv2.imwrite(f'{output_root_folder}\\semantic_segmentation\\custom_csc_semseg_{index}.png', id_mapped_image)
                 print(f'Index: {index } | Name: {path} | Process time: {time.time() - start_time:.2f}')
 
 if __name__ == "__main__":
