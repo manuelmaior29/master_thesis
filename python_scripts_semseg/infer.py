@@ -8,8 +8,8 @@ from matplotlib import pyplot as plt
 
 def main():
     # File parameters
-    model_parameters_load_path = r'./params/deeplabv3_model.pt'
-    sample_input_path = r'./pred_sample_images/sample_2.png'
+    model_parameters_load_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\python_scripts_semseg\params\deeplabv3_model.pt'
+    sample_input_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\python_scripts_semseg\pred_sample_images\sample_4.png'
 
     model = dlv3.deeplabv3_resnet50(pretrained=False, progress=True, num_classes=35)
     model.load_state_dict(torch.load(model_parameters_load_path))
@@ -22,16 +22,14 @@ def main():
 
     with torch.no_grad():
         pred = model(sample_input_image)['out']
-        print(pred.shape)
         pred = pred.data.cpu().numpy()[0]
-        print(len(np.unique(pred)))
         pred_image = np.argmax(pred, axis=0)
-        pred_image = pred_image.astype(np.uint8)
+        print(len(np.unique(pred_image)))
+        pred_image = pred_image * 255
 
         plt.figure()
         plt.imshow(pil_sample_input_image)
         
-
         plt.figure()
         plt.imshow(pred_image)
         plt.show()

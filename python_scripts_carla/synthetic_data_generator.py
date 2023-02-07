@@ -10,17 +10,10 @@
 # documented example, please take a look at tutorial.py.
 
 from __future__ import print_function
-
-
-# ==============================================================================
-# -- find carla module ---------------------------------------------------------
-# ==============================================================================
-
 import queue
 import glob
 import os
 import sys
-import time
 import cv2
 
 try:
@@ -31,79 +24,19 @@ try:
 except IndexError:
     pass
 
-
-# ==============================================================================
-# -- imports -------------------------------------------------------------------
-# ==============================================================================
-
-
 import carla
 
 from carla import ColorConverter as cc
 
 import argparse
-import collections
-import datetime
 import logging
-import math
 import random
 import re
-import weakref
-
-try:
-    import pygame
-    from pygame.locals import KMOD_CTRL
-    from pygame.locals import KMOD_SHIFT
-    from pygame.locals import K_0
-    from pygame.locals import K_9
-    from pygame.locals import K_BACKQUOTE
-    from pygame.locals import K_BACKSPACE
-    from pygame.locals import K_COMMA
-    from pygame.locals import K_DOWN
-    from pygame.locals import K_ESCAPE
-    from pygame.locals import K_F1
-    from pygame.locals import K_LEFT
-    from pygame.locals import K_PERIOD
-    from pygame.locals import K_RIGHT
-    from pygame.locals import K_SLASH
-    from pygame.locals import K_SPACE
-    from pygame.locals import K_TAB
-    from pygame.locals import K_UP
-    from pygame.locals import K_a
-    from pygame.locals import K_b
-    from pygame.locals import K_c
-    from pygame.locals import K_d
-    from pygame.locals import K_g
-    from pygame.locals import K_h
-    from pygame.locals import K_i
-    from pygame.locals import K_l
-    from pygame.locals import K_m
-    from pygame.locals import K_n
-    from pygame.locals import K_o
-    from pygame.locals import K_p
-    from pygame.locals import K_q
-    from pygame.locals import K_r
-    from pygame.locals import K_s
-    from pygame.locals import K_t
-    from pygame.locals import K_v
-    from pygame.locals import K_w
-    from pygame.locals import K_x
-    from pygame.locals import K_z
-    from pygame.locals import K_MINUS
-    from pygame.locals import K_EQUALS
-except ImportError:
-    raise RuntimeError('cannot import pygame, make sure pygame package is installed')
 
 try:
     import numpy as np
 except ImportError:
     raise RuntimeError('cannot import numpy, make sure numpy package is installed')
-
-
-# ==============================================================================
-# -- Global functions ----------------------------------------------------------
-# ==============================================================================
-
 
 def find_weather_presets():
     rgx = re.compile('.+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)')
@@ -122,14 +55,11 @@ def get_actor_blueprints(world, filter, generation):
     if generation.lower() == "all":
         return bps
 
-    # If the filter returns only one bp, we assume that this one needed
-    # and therefore, we ignore the generation
     if len(bps) == 1:
         return bps
 
     try:
         int_generation = int(generation)
-        # Check if generation is in available generations
         if int_generation in [1, 2]:
             bps = [x for x in bps if int(x.get_attribute('generation')) == int_generation]
             return bps
@@ -139,12 +69,6 @@ def get_actor_blueprints(world, filter, generation):
     except:
         print("   Warning! Actor Generation is not valid. No actor will be spawned.")
         return []
-
-
-# ==============================================================================
-# -- World ---------------------------------------------------------------------
-# ==============================================================================
-
 
 class World(object):
     def __init__(self, carla_world, args):
@@ -189,10 +113,10 @@ class World(object):
         self.__player_blueprint = random.choice(get_actor_blueprints(self.world, self._actor_filter, self._actor_generation))
         self.__player_available_waypoints = self.map.generate_waypoints(1.0)
 
-    def next_weather(self, reverse=False):
-        self._weather_index += -1 if reverse else 1
-        self._weather_index %= len(self._weather_presets)
-        preset = self._weather_presets[self._weather_index]
+    def set_weather(self, index):
+        # self._weather_index += -1 if reverse else 1
+        mod_index = index % len(self._weather_presets)
+        preset = self._weather_presets[mod_index]
         self.__player.get_world().set_weather(preset[0])
 
     def next_map_layer(self, reverse=False):
@@ -269,6 +193,15 @@ class World(object):
     def despawn_actors(self):
         self.__despawn_sensors()
         self.__despawn_player()
+
+# TODO: Implement random pedestrian and vehicle traffic
+class TrafficActorsManager(object):
+    def __init__(self, world, ped_perc_running, ped_perc_crossing, ped_count) -> None:
+        self.world = world
+        self.ped_perc_running = ped_perc_running
+        self.ped_perc_crossing = ped_perc_crossing
+        self.ped_count = ped_count
+        pass
 
 class SensorsManager(object):
     RESOLUTION_MULTIPLIER = 2.25
@@ -351,24 +284,21 @@ class SensorsManager(object):
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, 2]
             array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\semantic_segmentation\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array_resized)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array_resized)
             SensorsManager.SEM_CURRENT_FRAME += 1
         elif data["name"] == 'rgb':
             array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, :3]
             array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\rgb\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array_resized)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array_resized)
             SensorsManager.RGB_CURRENT_FRAME += 1
 
-# ==============================================================================
-# -- game_loop() ---------------------------------------------------------------
-# ==============================================================================
-
-def game_loop(args):
+def simulation_loop(args):
     
     world = None
-    number_of_images = 10
+    number_of_images = 250
+    weather_index = 0
 
     try:
         client = carla.Client(args.host, args.port)
@@ -384,24 +314,20 @@ def game_loop(args):
         traffic_manager.set_synchronous_mode(True)
 
         world.apply_settings()
-        for index in range(number_of_images):
+        for image_index in range(number_of_images):
             world.spawn_actors()
+            world.set_weather(image_index)
             world.world.tick()
             print(len(world.camera_manager.queue_dict.items()))
             for queue_key, queue in world.camera_manager.queue_dict.items():
                 while not queue.empty():
                     SensorsManager.parse_image({'image': queue.get(), 'name': queue_key})
-            print(index)
+            print(image_index)
             world.despawn_actors()
 
     finally:
         world.reset_settings()  
         pass
-
-# ==============================================================================
-# -- main() --------------------------------------------------------------------
-# ==============================================================================
-
 
 def main():
     argparser = argparse.ArgumentParser(
@@ -462,17 +388,15 @@ def main():
 
     log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(format='%(levelname)s: %(message)s', level=log_level)
-
     logging.info('listening to server %s:%s', args.host, args.port)
 
     print(__doc__)
 
     try:
-        game_loop(args)
+        simulation_loop(args)
 
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
-
 
 if __name__ == '__main__':
 

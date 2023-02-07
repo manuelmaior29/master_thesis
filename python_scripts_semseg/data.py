@@ -1,10 +1,12 @@
-import os
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from PIL import Image
+from tqdm import tqdm
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torchvision.transforms.functional as tf
+import cv2
 
 class SemanticLabelMapper():
     
@@ -25,9 +27,17 @@ class SemanticLabelMapper():
         return SemanticLabelMapper.MAPPING[self.type][pixel]
 
     def map_image(self, input):
-        flattened_image = np.ndarray.flatten(input)
-        mapped_image = np.array([self.__map_value(pixel) for pixel in flattened_image])
-        return mapped_image.reshape(input.shape)
+        return np.vectorize(self.__map_value)(input)
+    
+    def map_from_dir(self, src_path, dst_path, extension):
+        for file in tqdm(os.listdir(src_path)):
+            if file.endswith(extension):
+                src_image_path = f'{src_path}/{file}'
+                dst_image_path = f'{dst_path}/{file}'
+                src_image = np.array(Image.open(src_image_path, 'r'))
+                dst_image = self.map_image(src_image)            
+                dst_image = Image.fromarray(np.uint8(dst_image), 'L')
+                dst_image.save(dst_image_path,)
 
 class HybridDataset(Dataset):
 
@@ -109,3 +119,12 @@ def test():
 
     dataloader = DataLoader(custom_real_dataset, batch_size=4, shuffle=False)
     show_landmarks_batch(dataloader)
+
+def perform_image_mapping():
+    src_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\semantic_segmentation'
+    dst_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\semantic_segmentation_mapped'
+    slm = SemanticLabelMapper('cityscapes_to_common')
+    slm.map_from_dir(src_path=src_path, dst_path=dst_path, extension='.png')
+    
+# perform_image_mapping()
+# test()

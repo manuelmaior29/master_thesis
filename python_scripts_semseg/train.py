@@ -13,7 +13,8 @@ from tqdm import tqdm
 def train_epoch(model, train_loader, lr, loss_function, optimizer):
     model.train()
     batch_losses = []
-    for batch_index, (inputs, targets) in enumerate(train_loader):
+    # for batch_index, (inputs, targets) in enumerate(train_loader):
+    for (inputs, targets) in tqdm(train_loader, desc=f'Batch progress'):
         # print(f'----------[Batch {batch_index}]----------')
 
         ipts = torch.autograd.Variable(inputs).cuda()
@@ -34,7 +35,8 @@ def train_epoch(model, train_loader, lr, loss_function, optimizer):
 def train(model, train_loader, epochs, lr, loss_function, optimizer):
     model.train()
     epoch_losses = []
-    for epoch in range(epochs):
+    # for epoch in range(epochs):
+    for epoch in tqdm(range(epochs), desc='Epoch progress'):
         # print(f'----------[Epoch {epoch}]----------')
         batch_losses = train_epoch(
             model=model, 
@@ -55,7 +57,7 @@ def main():
     torch.cuda.empty_cache()
 
     # Misc parameters
-    model_parameters_save_path = r'./params/deeplabv3_model.pt'
+    model_parameters_save_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\python_scripts_semseg\params/deeplabv3_model.pt'
 
     # Model
     model = dlv3.deeplabv3_resnet50(pretrained=False, progress=True, num_classes=35)
@@ -63,7 +65,7 @@ def main():
     model.to(device)
 
     # Model parameters
-    batch_size = 4
+    batch_size = 2
     epochs = 4
     learning_rate = 0.0001
     params = utils.add_weight_decay(model, l2_value=0.0001)
@@ -74,20 +76,19 @@ def main():
     train_dataset = data.HybridDataset(
         root_path=r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\train',
         input_dir='rgb',
-        target_dir='semantic_segmentation',
+        target_dir='semantic_segmentation_mapped',
         transform=torchvision.transforms.Compose([
             torchvision.transforms.Resize((256, 512))
         ]),
         type='real',
-        labels_mapping='cityscapes_to_common'
+        labels_mapping=None
     )
 
     train_dataloader = DataLoader(
         dataset=train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=1,
-        
+        num_workers=1
     )
 
     # Start training
