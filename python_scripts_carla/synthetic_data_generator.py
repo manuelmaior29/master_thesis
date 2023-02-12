@@ -14,6 +14,7 @@ import queue
 import glob
 import os
 import sys
+import time
 import cv2
 
 try:
@@ -44,7 +45,6 @@ def find_weather_presets():
     presets = [x for x in dir(carla.WeatherParameters) if re.match('[A-Z].+', x)]
     return [(getattr(carla.WeatherParameters, x), name(x)) for x in presets]
 
-
 def get_actor_display_name(actor, truncate=250):
     name = ' '.join(actor.type_id.replace('_', '.').title().split('.')[1:])
     return (name[:truncate - 1] + u'\u2026') if len(name) > truncate else name
@@ -71,64 +71,41 @@ def get_actor_blueprints(world, filter, generation):
         return []
 
 class World(object):
-    def __init__(self, carla_world, args):
+
+    def __init__(self, carla_client, carla_world, args):
+        self.client = carla_client
         self.world = carla_world
         self.sync = args.sync
-        self.actor_role_name = args.rolename
-        try:
-            self.map = self.world.get_map()
-        except RuntimeError as error:
-            print('RuntimeError: {}'.format(error))
-            print('  The server could not send the OpenDRIVE (.xodr) file:')
-            print('  Make sure it exists, has the same name of your town, and is correct.')
-            sys.exit(1)
-        self.__player = None
+        self._ego = None
         self.camera_manager = None
+        self.vehicles_manager = None
+        self.maps = ["Town01", "Town02", "Town03", "Town04", "Town05", "Town06", "Town07", "Town10HD"] # list(map(lambda x: x.split('/')[-1], self.client.get_available_maps()))
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
         self._actor_filter = args.filter
         self._actor_generation = args.generation
         self._cam_width = args.width
         self._cam_height = args.height
-        self.current_map_layer = 0
-        self.map_layer_names = [
-            carla.MapLayer.NONE,
-            carla.MapLayer.Buildings,
-            carla.MapLayer.Decals,
-            carla.MapLayer.Foliage,
-            carla.MapLayer.Ground,
-            carla.MapLayer.ParkedVehicles,
-            carla.MapLayer.Particles,
-            carla.MapLayer.Props,
-            carla.MapLayer.StreetLights,
-            carla.MapLayer.Walls,
-            carla.MapLayer.All
-        ]
-        
-        if not self.map.get_spawn_points():
-                    print('There are no spawn points available in your map/town.')
-                    print('Please add some Vehicle Spawn Point to your UE4 scene.')
-                    sys.exit(1)
-
-        self.__player_blueprint = random.choice(get_actor_blueprints(self.world, self._actor_filter, self._actor_generation))
-        self.__player_available_waypoints = self.map.generate_waypoints(1.0)
+        self._ego_blueprint = random.choice(get_actor_blueprints(self.world, self._actor_filter, self._actor_generation))
 
     def set_weather(self, index):
-        # self._weather_index += -1 if reverse else 1
         mod_index = index % len(self._weather_presets)
         preset = self._weather_presets[mod_index]
-        self.__player.get_world().set_weather(preset[0])
+        self._ego.get_world().set_weather(preset[0])
 
-    def next_map_layer(self, reverse=False):
-        self.current_map_layer += -1 if reverse else 1
-        self.current_map_layer %= len(self.map_layer_names)
-
-    def load_map_layer(self, unload=False):
-        selected = self.map_layer_names[self.current_map_layer]
-        if unload:
-            self.world.unload_map_layer(selected)
-        else:
-            self.world.load_map_layer(selected)
+    def set_map(self, index):
+        self.client.load_world(self.maps[index], reset_settings=False)
+        self.world.tick()
+        time.sleep(1)
+        self.world = self.client.get_world()
+        self.map = self.world.get_map()
+        try:
+            self.map_available_waypoints = self.map.generate_waypoints(3.0)
+        except RuntimeError as error:
+            print('RuntimeError: {}'.format(error))
+            print('  The server could not send the OpenDRIVE (.xodr) file:')
+            print('  Make sure it exists, has the same name of your town, and is correct.')
+            sys.exit(1)
 
     def modify_vehicle_physics(self, actor):
         try:
@@ -138,41 +115,62 @@ class World(object):
         except Exception:
             pass
 
-    def __spawn_player(self):
-        self.__player_blueprint.set_attribute('role_name', self.actor_role_name)
-        if self.__player_blueprint.has_attribute('color'):
-            color = random.choice(self.__player_blueprint.get_attribute('color').recommended_values)
-            self.__player_blueprint.set_attribute('color', color)
-        if self.__player_blueprint.has_attribute('driver_id'):
-            driver_id = random.choice(self.__player_blueprint.get_attribute('driver_id').recommended_values)
-            self.__player_blueprint.set_attribute('driver_id', driver_id)
-        if self.__player_blueprint.has_attribute('is_invincible'):
-            self.__player_blueprint.set_attribute('is_invincible', 'true')
+    def _spawn_ego(self):
+        if self._ego_blueprint.has_attribute('color'):
+            color = random.choice(self._ego_blueprint.get_attribute('color').recommended_values)
+            self._ego_blueprint.set_attribute('color', color)
+        if self._ego_blueprint.has_attribute('driver_id'):
+            driver_id = random.choice(self._ego_blueprint.get_attribute('driver_id').recommended_values)
+            self._ego_blueprint.set_attribute('driver_id', driver_id)
+        if self._ego_blueprint.has_attribute('is_invincible'):
+            self._ego_blueprint.set_attribute('is_invincible', 'true')
 
-        spawn_point = random.choice(self.__player_available_waypoints).transform if self.__player_available_waypoints else carla.Transform()
-        while self.__player is None:
+        spawn_point = carla.Transform()
+        if self.map_available_waypoints:
+            spawn_point = random.choice(self.map_available_waypoints)        
+            self.map_available_waypoints.remove(spawn_point)
+            spawn_point = spawn_point.transform
+
+        while self._ego is None:
             spawn_point.location.z += 0.1
-            self.__player = self.world.try_spawn_actor(self.__player_blueprint, spawn_point)
-            self.modify_vehicle_physics(self.__player)
+            self._ego = self.world.try_spawn_actor(self._ego_blueprint, spawn_point)
+            self.modify_vehicle_physics(self._ego)
+        spectator_transform = spawn_point
+        spectator_transform.location.z += 2.0
+        self.world.get_spectator().set_transform(spectator_transform)
         self.world.tick()
 
-    def __spawn_sensors(self):
+    def _spawn_sensors(self):
         if self.camera_manager is None: 
-            if self.__player is not None:
+            if self._ego is not None:
                 self.camera_manager = SensorsManager(self.world, self._cam_width, self._cam_height)
             else:
                 print('Ego vehicle spawn --> Sensors spawn.')
+                exit(-1)
         self.camera_manager.transform_index = 0
-        self.camera_manager.spawn_sensors(self.__player)
+        self.camera_manager.spawn_sensors(self._ego)
 
-    def __despawn_player(self):
-        if self.__player is not None:
-            print(self.__player.destroy())
-            self.__player = None
+    def _spawn_vehicles(self):
+        if self.vehicles_manager is None:
+            if self._ego is not None:
+            # TODO: Parametrize vehicle count
+                self.vehicles_manager = VehiclesManager(self.world, vehicle_count=3)
+            else:
+                print('Ego vehicle spawn --> Sensors spawn.')
+                exit(-1)
+        self.vehicles_manager.spawn_vehicles(spawn_points=self.map_available_waypoints)
+
+    def _despawn_ego(self):
+        if self._ego is not None:
+            print(self._ego.destroy())
+            self._ego = None
         self.world.tick()
 
-    def __despawn_sensors(self):
+    def _despawn_sensors(self):
         self.camera_manager.despawn_sensors()
+
+    def _despawn_vehicles(self):
+        self.vehicles_manager.despawn_vehicles()
 
     def apply_settings(self):
         settings = self.world.get_settings()
@@ -187,21 +185,66 @@ class World(object):
         self.world.apply_settings(settings)
             
     def spawn_actors(self):
-        self.__spawn_player()
-        self.__spawn_sensors()
+        self._spawn_ego()
+        self._spawn_vehicles()
+        self._spawn_sensors()
 
     def despawn_actors(self):
-        self.__despawn_sensors()
-        self.__despawn_player()
+        self._despawn_sensors()
+        self._despawn_vehicles()
+        self._despawn_ego()
 
-# TODO: Implement random pedestrian and vehicle traffic
-class TrafficActorsManager(object):
-    def __init__(self, world, ped_perc_running, ped_perc_crossing, ped_count) -> None:
+# TODO: Implement random vehicle traffic
+class VehiclesManager(object):
+    def __init__(self, world, vehicle_count) -> None:
         self.world = world
-        self.ped_perc_running = ped_perc_running
-        self.ped_perc_crossing = ped_perc_crossing
-        self.ped_count = ped_count
-        pass
+        self.vehicle_count = vehicle_count
+        self.spawned_vehicles = []
+
+    def spawn_vehicles(self, spawn_points):
+        shuffled_spawn_points = spawn_points.copy()
+        random.shuffle(shuffled_spawn_points)
+        
+        # Choose //vehicle_count// spawn points, iterate over and pop one at a time
+        if self.vehicle_count > len(shuffled_spawn_points):
+            print('More vehicles than available spawn points!')
+            exit(-1)
+
+        vehicle_blueprints = get_actor_blueprints(self.world, "vehicle.*", "2")
+        for _ in range(self.vehicle_count):   
+            spawn_point = random.choice(shuffled_spawn_points)
+            shuffled_spawn_points.remove(spawn_point)
+            spawn_point = spawn_point.transform
+            vehicle_blueprint = random.choice(vehicle_blueprints)
+
+            if vehicle_blueprint.has_attribute('color'):
+                color = random.choice(vehicle_blueprint.get_attribute('color').recommended_values)
+                vehicle_blueprint.set_attribute('color', color)
+            if vehicle_blueprint.has_attribute('driver_id'):
+                driver_id = random.choice(vehicle_blueprint.get_attribute('driver_id').recommended_values)
+                vehicle_blueprint.set_attribute('driver_id', driver_id)
+            if vehicle_blueprint.has_attribute('is_invincible'):
+                vehicle_blueprint.set_attribute('is_invincible', 'true')
+
+            vehicle = None
+            while vehicle is None:
+                spawn_point.location.z += 0.1
+                vehicle = self.world.try_spawn_actor(vehicle_blueprint, spawn_point)
+            self.spawned_vehicles += [vehicle]
+            
+            spectator_transform = spawn_point
+            spectator_transform.location.z += 2.0
+            self.world.get_spectator().set_transform(spectator_transform)
+            self.world.tick()
+            time.sleep(1.0)
+
+    def despawn_vehicles(self):
+        for spawned_vehicle in self.spawned_vehicles:
+            if spawned_vehicle is not None:
+                spawned_vehicle.destroy()
+                spawned_vehicle = None
+            self.world.tick()
+
 
 class SensorsManager(object):
     RESOLUTION_MULTIPLIER = 2.25
@@ -209,11 +252,11 @@ class SensorsManager(object):
     RGB_CURRENT_FRAME = 0
 
     def __init__(self, world, width, height):
+        self._parent = None
         self.world = world
         self.queue_dict = {}
         self.width = SensorsManager.RESOLUTION_MULTIPLIER * width
         self.height = SensorsManager.RESOLUTION_MULTIPLIER * height
-        self.transform_index = 0
         self.bp_library = None
         self.sensor_types = [
             ['sensor.camera.rgb', cc.Raw, 'Camera RGB', {}],
@@ -233,10 +276,10 @@ class SensorsManager(object):
             self.sensor_semseg = None
 
     def spawn_sensors(self, parent_actor):
-        self.__parent = parent_actor
+        self._parent = parent_actor
 
         if self.bp_library is None:
-            self.bp_library = self.__parent.get_world().get_blueprint_library()
+            self.bp_library = self._parent.get_world().get_blueprint_library()
             # TODO: Solve hardcoded values
 
             # Epsilon value is subtracted to ensure that there is no sensor capture miss because of world tick rate
@@ -251,20 +294,20 @@ class SensorsManager(object):
             self.bp_sensor_semseg.set_attribute('image_size_y', str(self.height))
             self.bp_sensor_semseg.set_attribute('sensor_tick', str(0.5 - sys.float_info.epsilon))
             
-        vehicle_bound_x = 0.5 + self.__parent.bounding_box.extent.x
-        vehicle_bound_y = 0.5 + self.__parent.bounding_box.extent.y
-        vehicle_bound_z = 0.5 + self.__parent.bounding_box.extent.z
+        vehicle_bound_x = 0.5 + self._parent.bounding_box.extent.x
+        vehicle_bound_y = 0.5 + self._parent.bounding_box.extent.y
+        vehicle_bound_z = 0.5 + self._parent.bounding_box.extent.z
         camera_transform = carla.Transform(carla.Location(x=+0.8*vehicle_bound_x, y=+0.0*vehicle_bound_y, z=1.3*vehicle_bound_z))
 
-        self.sensor_rgb = self.__parent.get_world().spawn_actor(
+        self.sensor_rgb = self._parent.get_world().spawn_actor(
                 self.bp_sensor_rgb,
                 camera_transform,
-                attach_to=self.__parent,
+                attach_to=self._parent,
                 attachment_type=carla.AttachmentType.Rigid)
-        self.sensor_semseg = self.__parent.get_world().spawn_actor(
+        self.sensor_semseg = self._parent.get_world().spawn_actor(
                 self.bp_sensor_semseg,
                 camera_transform,
-                attach_to=self.__parent,
+                attach_to=self._parent,
                 attachment_type=carla.AttachmentType.Rigid)
 
         self.world.tick()
@@ -297,37 +340,44 @@ class SensorsManager(object):
 def simulation_loop(args):
     
     world = None
-    number_of_images = 250
-    weather_index = 0
+    number_of_images = 24
 
-    try:
-        client = carla.Client(args.host, args.port)
-        client.set_timeout(5.0)
-        sim_world = client.get_world()
+    client = carla.Client(args.host, args.port)
+    client.set_timeout(200.0)
+    sim_world = client.get_world()
 
-        if args.autopilot and not sim_world.get_settings().synchronous_mode:
-            print("WARNING: You are currently in asynchronous mode and could "
-                "experience some issues with the traffic simulation")   
+    world = World(client, sim_world, args)
+    traffic_manager = client.get_trafficmanager()
+    traffic_manager.set_synchronous_mode(True)
 
-        world = World(sim_world, args)
-        traffic_manager = client.get_trafficmanager()
-        traffic_manager.set_synchronous_mode(True)
-
+    map_index = -1
+    for image_index in range(number_of_images):
         world.apply_settings()
-        for image_index in range(number_of_images):
-            world.spawn_actors()
-            world.set_weather(image_index)
-            world.world.tick()
-            print(len(world.camera_manager.queue_dict.items()))
-            for queue_key, queue in world.camera_manager.queue_dict.items():
-                while not queue.empty():
-                    SensorsManager.parse_image({'image': queue.get(), 'name': queue_key})
-            print(image_index)
-            world.despawn_actors()
 
-    finally:
-        world.reset_settings()  
-        pass
+        new_map_index = int(image_index / (number_of_images / len(world.maps)))
+        if new_map_index != map_index:
+            # TODO: Fix sleeping with a wait on the currently active actors (especially cameras)
+            time.sleep(2)
+            map_index = new_map_index
+            world.set_map(map_index)
+            print('------------------------- New map -------------------------')
+
+        world.spawn_actors()
+        world.set_weather(image_index)
+        world.world.tick()
+
+        print('Map index:\t', map_index)
+        print('Image index:\t', image_index)
+        print('Cameras:\t', len(world.camera_manager.queue_dict.items()))
+        
+        for queue_key, queue in world.camera_manager.queue_dict.items():
+            print(f'\t{queue_key} received images', queue.qsize())
+            while not queue.empty():
+                SensorsManager.parse_image({'image': queue.get(), 'name': queue_key})
+
+        world.despawn_actors()
+    world.reset_settings()
+
 
 def main():
     argparser = argparse.ArgumentParser(
