@@ -205,7 +205,6 @@ class VehiclesManager(object):
         shuffled_spawn_points = spawn_points.copy()
         random.shuffle(shuffled_spawn_points)
         
-        # Choose //vehicle_count// spawn points, iterate over and pop one at a time
         if self.vehicle_count > len(shuffled_spawn_points):
             print('More vehicles than available spawn points!')
             exit(-1)
@@ -243,7 +242,8 @@ class VehiclesManager(object):
             if spawned_vehicle is not None:
                 spawned_vehicle.destroy()
                 spawned_vehicle = None
-            self.world.tick()
+        self.spawned_vehicles = []
+        self.world.tick()
 
 
 class SensorsManager(object):
