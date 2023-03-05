@@ -2,7 +2,7 @@ import shutil
 import os
 
 index = 0
-for root, dirs, files in os.walk(r'D:\Research\CityScapes_SemSeg\leftImg8bit_trainvaltest\leftImg8bit\test'):
+for root, dirs, files in os.walk(r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\test'):
     for name in files:
-        if name.endswith(".png"):
+        if name.endswith("gtFine_color.png"):
             shutil.move(f'{root}/{name}', r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\test\rgb')

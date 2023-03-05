@@ -2,6 +2,7 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from PIL import Image
 from tqdm import tqdm
+import torch
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,12 +11,37 @@ import cv2
 
 class SemanticLabelMapper():
     
+    ID_TO_STRING = {
+        'common': {
+            0: 'road',
+            1: 'sidewalk',
+            2: 'building',
+            3: 'wall',
+            4: 'fence',
+            5: 'pole',
+            6: 'trafficlight',
+            7: 'trafficsign',
+            8: 'vegetation',
+            9: 'terrain',
+            10: 'sky',
+            11: 'pedestrian',
+            12: 'rider',
+            13: 'car',
+            14: 'truck',
+            15: 'bus',
+            16: 'train',
+            17: 'motorcycle',
+            18: 'bicycle',
+            19: 'any'
+        }
+    }
+
     MAPPING = {
         'carla_to_common': [
-            0, 1, 2, 3, 4, 5, 7, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 3, 22
+            19, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 19, 19, 19, 0, 19, 19, 19, 19
         ],
         'cityscapes_to_common': [
-            0, 3, 3, 3, 19, 20, 14, 7, 8, 19, 16, 1, 11, 2, 17, 15, 3, 5, 5, 18, 12, 9, 22, 13, 4, 4, 10, 10, 10, 10, 10, 10, 10, 10, 10
+            19, 19, 19, 19, 19, 19, 19, 0, 1, 19, 19, 2, 3, 4, 19, 19, 19, 5, 19, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 19, 16, 17, 18, 19   
         ]
     }
 
@@ -37,7 +63,7 @@ class SemanticLabelMapper():
                 src_image = np.array(Image.open(src_image_path, 'r'))
                 dst_image = self.map_image(src_image)            
                 dst_image = Image.fromarray(np.uint8(dst_image), 'L')
-                dst_image.save(dst_image_path,)
+                dst_image.save(dst_image_path)
 
 class HybridDataset(Dataset):
 
@@ -63,7 +89,7 @@ class HybridDataset(Dataset):
         img_path_tgt_patch = os.path.join(self.root_path, self.target_data, f"{self.type}_semantic_segmentation_{index}.png")
         
         ipt_patch = np.array(Image.open(img_path_input_patch, 'r')).astype(np.float32)
-        tgt_patch = np.array(Image.open(img_path_tgt_patch, 'r'))
+        tgt_patch = np.array(Image.open(img_path_tgt_patch, 'r',)).astype(np.int_)
 
         if self.labels_mapping is not None:
             try:
@@ -71,7 +97,7 @@ class HybridDataset(Dataset):
                 tgt_patch = semantic_label_mapper.map_image(tgt_patch)
             except Exception as e:
                 raise Exception(f'Could not perform label mapping!\n {e}')
-        tgt_patch.astype(np.float32)
+        # tgt_patch.astype(np.float32)
         np.expand_dims(tgt_patch, axis=0)
             
         ipt_patch_tensor = tf.to_tensor(ipt_patch)
@@ -121,10 +147,58 @@ def test():
     show_landmarks_batch(dataloader)
 
 def perform_image_mapping():
-    src_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\semantic_segmentation'
-    dst_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\semantic_segmentation_mapped'
+    src_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\val\semantic_segmentation'
+    dst_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\val\semantic_segmentation_mapped'
     slm = SemanticLabelMapper('cityscapes_to_common')
     slm.map_from_dir(src_path=src_path, dst_path=dst_path, extension='.png')
     
-# perform_image_mapping()
+def visualize_class_distribution():
+    dataset = HybridDataset(
+        root_path=r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\train',
+        input_dir='rgb',
+        target_dir='semantic_segmentation_mapped',
+        transform=None,
+        type='real',
+        labels_mapping=None)
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=False)
+
+    classes_keys = list(SemanticLabelMapper.ID_TO_STRING['common'].keys())
+    classes_labels = list(SemanticLabelMapper.ID_TO_STRING['common'].values())
+    classes_distribution = {}
+    for key in classes_keys:
+        classes_distribution[key] = 0
+
+    pixel_count = 0
+    batch_idx = 0
+ 
+    for _, target_batch in dataloader:
+        print(batch_idx)
+        for target_map in target_batch:
+            flattened_target_map = (torch.flatten(target_map) * 255).long()
+            labels_count = torch.bincount(flattened_target_map)
+            for i in range(len(labels_count)):
+                if labels_count[i] != 0:
+                    classes_distribution[i] += labels_count[i].item()
+
+        pixel_count += 1
+        batch_idx += 1
+
+    keys = list(classes_labels)
+    values = list(classes_distribution.values())
+    values_count = sum(values)
+
+    # Plot the data using a bar plot
+    plt.bar(keys, values)
+    plt.xticks(keys, rotation=45)
+    plt.xlabel('Class')
+    plt.ylabel('Frequency')
+    plt.title('Class distribution')
+
+    for i, v in enumerate(values):
+        plt.text(i, v, str(round(v/values_count*100, 3)) + '%', ha='center')
+
+    plt.show()
+
 # test()
+# perform_image_mapping()
+# visualize_class_distribution()

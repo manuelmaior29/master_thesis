@@ -17,13 +17,7 @@ import sys
 import time
 import cv2
 
-try:
-    sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
-        sys.version_info.major,
-        sys.version_info.minor,
-        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
-except IndexError:
-    pass
+
 
 import carla
 
@@ -79,7 +73,7 @@ class World(object):
         self._ego = None
         self.camera_manager = None
         self.vehicles_manager = None
-        self.maps = ["Town01", "Town02", "Town03", "Town04", "Town05", "Town06", "Town07", "Town10HD"] # list(map(lambda x: x.split('/')[-1], self.client.get_available_maps()))
+        self.maps = ["Town05", "Town06", "Town07", "Town10HD"] # list(map(lambda x: x.split('/')[-1], self.client.get_available_maps()))
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
         self._actor_filter = args.filter
@@ -95,8 +89,10 @@ class World(object):
 
     def set_map(self, index):
         self.client.load_world(self.maps[index], reset_settings=False)
-        self.world.tick()
-        time.sleep(1)
+        # self.world.tick()
+        self.reset_settings()
+        time.sleep(8)
+        self.apply_settings()
         self.world = self.client.get_world()
         self.map = self.world.get_map()
         try:
@@ -154,7 +150,7 @@ class World(object):
         if self.vehicles_manager is None:
             if self._ego is not None:
             # TODO: Parametrize vehicle count
-                self.vehicles_manager = VehiclesManager(self.world, vehicle_count=3)
+                self.vehicles_manager = VehiclesManager(self.world, vehicle_count=12)
             else:
                 print('Ego vehicle spawn --> Sensors spawn.')
                 exit(-1)
@@ -227,15 +223,14 @@ class VehiclesManager(object):
 
             vehicle = None
             while vehicle is None:
-                spawn_point.location.z += 0.1
+                spawn_point.location.z += 0.05
                 vehicle = self.world.try_spawn_actor(vehicle_blueprint, spawn_point)
             self.spawned_vehicles += [vehicle]
             
-            spectator_transform = spawn_point
-            spectator_transform.location.z += 2.0
-            self.world.get_spectator().set_transform(spectator_transform)
+            # spectator_transform = spawn_point
+            # spectator_transform.location.z += 2.0
+            # self.world.get_spectator().set_transform(spectator_transform)
             self.world.tick()
-            time.sleep(1.0)
 
     def despawn_vehicles(self):
         for spawned_vehicle in self.spawned_vehicles:
@@ -245,6 +240,9 @@ class VehiclesManager(object):
         self.spawned_vehicles = []
         self.world.tick()
 
+
+def do_sth(data):
+    print('Callback for sensor input: ', data)
 
 class SensorsManager(object):
     RESOLUTION_MULTIPLIER = 2.25
@@ -287,12 +285,14 @@ class SensorsManager(object):
             self.bp_sensor_rgb = self.bp_library.find('sensor.camera.rgb')
             self.bp_sensor_rgb.set_attribute('image_size_x', str(self.width))
             self.bp_sensor_rgb.set_attribute('image_size_y', str(self.height))
-            self.bp_sensor_rgb.set_attribute('sensor_tick', str(0.5 - sys.float_info.epsilon))
+            self.bp_sensor_rgb.set_attribute('bloom_intensity', str(0.0))
+            self.bp_sensor_rgb.set_attribute('fstop', str(1.8))
+            self.bp_sensor_rgb.set_attribute('sensor_tick', str(0.0))
             # Semantic segmentation blueprint fetch
             self.bp_sensor_semseg = self.bp_library.find('sensor.camera.semantic_segmentation')
             self.bp_sensor_semseg.set_attribute('image_size_x', str(self.width))
             self.bp_sensor_semseg.set_attribute('image_size_y', str(self.height))
-            self.bp_sensor_semseg.set_attribute('sensor_tick', str(0.5 - sys.float_info.epsilon))
+            self.bp_sensor_semseg.set_attribute('sensor_tick', str(0.0))
             
         vehicle_bound_x = 0.5 + self._parent.bounding_box.extent.x
         vehicle_bound_y = 0.5 + self._parent.bounding_box.extent.y
@@ -318,7 +318,7 @@ class SensorsManager(object):
         self.queue_dict['semantic_segmentation'] = queue.Queue()
         self.sensor_rgb.listen(self.queue_dict['rgb'].put)
         self.sensor_semseg.listen(self.queue_dict['semantic_segmentation'].put)
-
+    
     @staticmethod
     def parse_image(data):
         # TODO: Parametrize hardcoded path strings
@@ -337,10 +337,11 @@ class SensorsManager(object):
             cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array_resized)
             SensorsManager.RGB_CURRENT_FRAME += 1
 
+
 def simulation_loop(args):
     
     world = None
-    number_of_images = 24
+    number_of_images = 400
 
     client = carla.Client(args.host, args.port)
     client.set_timeout(200.0)
@@ -357,14 +358,16 @@ def simulation_loop(args):
         new_map_index = int(image_index / (number_of_images / len(world.maps)))
         if new_map_index != map_index:
             # TODO: Fix sleeping with a wait on the currently active actors (especially cameras)
-            time.sleep(2)
+            time.sleep(1.5)
             map_index = new_map_index
             world.set_map(map_index)
             print('------------------------- New map -------------------------')
 
         world.spawn_actors()
         world.set_weather(image_index)
+
         world.world.tick()
+        time.sleep(1)
 
         print('Map index:\t', map_index)
         print('Image index:\t', image_index)
