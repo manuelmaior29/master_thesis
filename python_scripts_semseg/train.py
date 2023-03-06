@@ -50,32 +50,37 @@ def train(model, train_dataloader, epochs, loss_function, optimizer):
     plt.title('Loss over Epochs') 
     plt.show() 
 
+def prepare_training(epochs, batch_size, subset_size, image_width, image_height):
+    # TODO: Parametrize code so that it can be called from a driver
+    pass
+
 def main():
     torch.cuda.empty_cache()
 
     # Misc parameters
     model_parameters_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\python_scripts_semseg\params/deeplabv3_model.pt'
-    fine_tune = False
+    fine_tune = True
 
     # Model training hyper-parameters configuration
     ignored_label = 255
-    epochs = 8
+    epochs = 10
     learning_rate = 0.0001
 
     # Data
+    data_source = 'synthetic'
     batch_size = 4
-    subset_size = 1000
+    subset_size = 400
     image_width = 512
     image_height = 256
 
     train_dataset = data.HybridDataset(
-        root_path=r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\train',
+        root_path=f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\{data_source}\\train',
         input_dir='rgb',
         target_dir='semantic_segmentation_mapped',
         transform=torchvision.transforms.Compose([
             torchvision.transforms.Resize((image_height, image_width))
         ]),
-        type='real',
+        type=data_source,
         labels_mapping=None
     )
     train_dataset = Subset(train_dataset, indices=range(subset_size))
@@ -110,7 +115,6 @@ def main():
         model=model, 
         train_dataloader=train_dataloader, 
         epochs=epochs, 
-        lr=learning_rate,
         loss_function=loss_function, 
         optimizer=optimizer
     )

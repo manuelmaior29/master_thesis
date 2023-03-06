@@ -33,7 +33,6 @@ def eval(model, test_dataloader, num_classes):
     miou = iou.mean()
 
     print(f'mIoU: {miou.item()}')
-    
 
 def main():
     # File parameters
@@ -45,19 +44,20 @@ def main():
     model.to(device)
 
     # Data
+    data_source = 'real'
     batch_size = 4
-    subset_size = 40
+    subset_size = 500
     image_width = 512
     image_height = 256
 
     test_dataset = data.HybridDataset(
-        root_path=r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\val',
+        root_path=f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\{data_source}\\val',
         input_dir='rgb',
         target_dir='semantic_segmentation_mapped',
         transform=torchvision.transforms.Compose([
             torchvision.transforms.Resize((image_height, image_width))
         ]),
-        type='real',
+        type=data_source,
         labels_mapping=None
     )
     test_dataset = Subset(test_dataset, indices=range(subset_size))
