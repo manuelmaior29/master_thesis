@@ -11,14 +11,9 @@
 
 from __future__ import print_function
 import queue
-import glob
-import os
 import sys
 import time
 import cv2
-
-
-
 import carla
 
 from carla import ColorConverter as cc
@@ -64,7 +59,7 @@ def get_actor_blueprints(world, filter, generation):
         print("   Warning! Actor Generation is not valid. No actor will be spawned.")
         return []
 
-class World(object):
+class WorldManager(object):
 
     def __init__(self, carla_client, carla_world, args):
         self.client = carla_client
@@ -150,7 +145,7 @@ class World(object):
         if self.vehicles_manager is None:
             if self._ego is not None:
             # TODO: Parametrize vehicle count
-                self.vehicles_manager = VehiclesManager(self.world, vehicle_count=12)
+                self.vehicles_manager = VehicleTrafficManager(self.world, vehicle_count=12)
             else:
                 print('Ego vehicle spawn --> Sensors spawn.')
                 exit(-1)
@@ -191,7 +186,7 @@ class World(object):
         self._despawn_ego()
 
 # TODO: Implement random vehicle traffic
-class VehiclesManager(object):
+class VehicleTrafficManager(object):
     def __init__(self, world, vehicle_count) -> None:
         self.world = world
         self.vehicle_count = vehicle_count
@@ -226,10 +221,7 @@ class VehiclesManager(object):
                 spawn_point.location.z += 0.05
                 vehicle = self.world.try_spawn_actor(vehicle_blueprint, spawn_point)
             self.spawned_vehicles += [vehicle]
-            
-            # spectator_transform = spawn_point
-            # spectator_transform.location.z += 2.0
-            # self.world.get_spectator().set_transform(spectator_transform)
+    
             self.world.tick()
 
     def despawn_vehicles(self):
@@ -240,9 +232,106 @@ class VehiclesManager(object):
         self.spawned_vehicles = []
         self.world.tick()
 
+class PedestrianTrafficManager(object):
+    
+    SpawnActor = carla.command.SpawnActor
+    SetAutopilot = carla.command.SetAutopilot
+    FutureActor = carla.command.FutureActor
 
-def do_sth(data):
-    print('Callback for sensor input: ', data)
+    def __init__(self, client, world) -> None:
+        self.client = client
+        self.world = world
+        self.pedestrian_actors = []
+        self.pedestrian_bps = random.shuffle(get_actor_blueprints(world, 'walker.pedestrian.*', 2))
+        self.pedestrian_controller_bp = world.get_blueprint_library().find('controller.ai.walker')
+        self.pedestrian_bp_index = 0
+        
+    def _setup_pedestrian_spawn_data(self, spawn_point, pedestrian_running_perc):
+        pedestrian_spawn_data = {
+            'bp': self.pedestrian_bps(self.pedestrian_bp_index),
+            'speed': None,
+            'spawn_point': spawn_point
+        }
+        if (pedestrian_spawn_data['bp'].has_attribute('is_invincible')):
+            pedestrian_spawn_data['bp'].set_attribute('is_invincible', 'false')
+        if (pedestrian_spawn_data['bp'].has_attribute('speed')):
+            if (random.random() > pedestrian_running_perc):
+                pedestrian_spawn_data['speed'] = pedestrian_spawn_data['bp'].get_attribute('speed').recommended_values[1]
+            else:
+                pedestrian_spawn_data['speed'] = pedestrian_spawn_data['bp'].get_attribute('speed').recommended_values[2]
+        else:
+            pedestrian_spawn_data['speed'] = 0.0
+        self.pedestrian_bp_index = (self.pedestrian_bp_index + 1) % len(self.pedestrian_bps)
+        return pedestrian_spawn_data
+    
+    def _launch_pedestrian_spawn_command_batch(self, pedestrian_spawn_data_list):
+        pedestrian_spawn_command_batch = []
+        for pedestrian_spawn_data in pedestrian_spawn_data_list:
+            pedestrian_spawn_command_batch.append(PedestrianTrafficManager.SpawnActor(
+                pedestrian_spawn_data['bp'],
+                pedestrian_spawn_data['spawn_point']
+            ))
+        return self.client.apply_batch_sync(pedestrian_spawn_command_batch, True)
+
+    def _check_pedestrian_spawn_results(self, pedestrian_spawn_data_list, pedestrian_spawn_results):
+        pedestrian_spawned_check_data_list = []
+        for i in range(len(pedestrian_spawn_results)):
+            if pedestrian_spawn_results[i].error:
+                print(pedestrian_spawn_results[i].error)
+            else:
+                pedestrian_spawned_check_data_list.append({
+                    'id': pedestrian_spawn_results[i].actor_id,
+                    'speed': pedestrian_spawn_data_list[i]['speed']
+                })
+        return pedestrian_spawned_check_data_list
+    
+    def _launch_pedestrian_controller_spawn_command_batch(self, pedestrian_spawn_data_list):
+        pedestrian_controller_spawn_command_batch = []
+        for i in range(len(pedestrian_spawn_data_list)):
+            pedestrian_controller_spawn_command_batch.append(
+                PedestrianTrafficManager.SpawnActor(
+                    self.pedestrian_controller_bp, 
+                    carla.Transform(),
+                    pedestrian_spawn_data_list[i]['id']
+                )
+            )
+        return self.client.apply_batch_sync(pedestrian_controller_spawn_command_batch, True)
+    
+    def _check_pedestrian_controller_spawn_results(self, pedestrian_spawn_data_list, pedestrian_controller_spawn_results):
+        pedestrian_controller_spawned_check_data_list = pedestrian_spawn_data_list.copy()
+        for i in range(len(pedestrian_controller_spawn_results)):
+            if pedestrian_controller_spawn_results[i].error:
+                print(pedestrian_controller_spawn_results[i].error)
+            else:
+                pedestrian_controller_spawned_check_data_list[i]['con'] = pedestrian_controller_spawn_results[i].actor_id
+        
+    def _store_pedestrian_actors(self, pedestrian_spawn_data_list):
+        pedestrian_related_ids = []
+        for i in range(len(pedestrian_spawn_data_list)):
+            pedestrian_related_ids.append(pedestrian_spawn_data_list[i]['con'])
+            pedestrian_related_ids.append(pedestrian_spawn_data_list[i]['id'])
+        self.pedestrian_actors = self.world.get_actors(pedestrian_related_ids)
+
+    def _apply_pedestrian_control(self, pedestrian_crossing_perc):
+        pass
+
+    def _destroy_pedestrian(self):
+        pass
+
+    def spawn_pedestrians(self, pedestrian_number, pedestrian_crossing_perc, pedestrian_running_perc):
+        spawn_points = []
+        for _ in range(pedestrian_number):
+            spawn_point = carla.Transform()
+            spawn_point_location = self.world.get_random_location_from_navigation()
+            if (spawn_point_location != None):
+                spawn_point.location = spawn_point_location
+                spawn_points.append(spawn_point)
+
+        for spawn_point in spawn_points:
+            self._spawn_pedestrian(spawn_point=spawn_point)
+        
+    def destroy_pedestrians(self):
+        pass
 
 class SensorsManager(object):
     RESOLUTION_MULTIPLIER = 2.25
@@ -347,7 +436,7 @@ def simulation_loop(args):
     client.set_timeout(200.0)
     sim_world = client.get_world()
 
-    world = World(client, sim_world, args)
+    world = WorldManager(client, sim_world, args)
     traffic_manager = client.get_trafficmanager()
     traffic_manager.set_synchronous_mode(True)
 
