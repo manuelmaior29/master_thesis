@@ -11,11 +11,36 @@ from torch.utils.data import Subset
 from torchsummary import summary
 from tqdm import tqdm
 
+def validate_epoch(model, val_dataloader, loss_function):
+    model.eval()
+    batch_losses = []
+    metrics = {'miou': 0, 'loss': 0}
+    
+    with torch.no_grad():
+        for (inputs, targets) in tqdm(val_dataloader, desc=f'Validation batch progress'):
+            ipts = torch.autograd.Variable(inputs).cuda()
+            tgts = torch.autograd.Variable(targets).cuda()
+            
+            preds = model(ipts)['out']
+            loss = loss_function(preds, tgts.squeeze(1).long())
+            loss = loss.data.cpu().numpy()
+            batch_losses += [loss]
+
+            preds = torch.argmax(preds.cpu(), dim=1)
+            tgts = torch.squeeze(targets, dim=1)
+
+            metrics['miou'] += sum(utils.iou(preds, tgts, num_classes=20)) / 20
+            metrics['loss'] += loss
+
+        metrics['miou'] /= float(len(val_dataloader))
+        metrics['loss'] /= float(len(val_dataloader))
+    return metrics
+
 def train_epoch(model, train_dataloader, loss_function, optimizer):
     model.train()
     batch_losses = []
     
-    for (inputs, targets) in tqdm(train_dataloader, desc=f'Batch progress'):
+    for (inputs, targets) in tqdm(train_dataloader, desc=f'Training batch progress'):
         ipts = torch.autograd.Variable(inputs).cuda()
         tgts = torch.autograd.Variable(targets).cuda()
         pred = model(ipts)['out']
@@ -30,25 +55,38 @@ def train_epoch(model, train_dataloader, loss_function, optimizer):
 
     return batch_losses
 
-def train(model, train_dataloader, epochs, loss_function, optimizer):
+def train(model, train_dataloader, val_dataloader, epochs, loss_function, optimizer):
     model.train()
-    epoch_losses = []
+    epoch_train_losses = []
+    epoch_val_losses = []
     for _ in tqdm(range(epochs), desc='Epoch progress'):
-        batch_losses = train_epoch(
+        batch_train_losses = train_epoch(
             model=model, 
             train_dataloader=train_dataloader,
             loss_function=loss_function, 
-            optimizer=optimizer
-        )
-        epoch_average_loss = np.mean(batch_losses)
-        epoch_losses += [epoch_average_loss]
-        print(f'Epoch average loss: {epoch_average_loss:.2f}')
+            optimizer=optimizer)
+        
+        batch_val_metrics = validate_epoch(
+            model=model,
+            val_dataloader=val_dataloader,
+            loss_function=loss_function)
+
+        epoch_average_train_loss = np.mean(batch_train_losses)
+        epoch_train_losses += [epoch_average_train_loss]
+        epoch_val_losses += [batch_val_metrics['loss']]
+
+        print(f'\n\n[TRAIN] Epoch average loss: {epoch_average_train_loss:.2f}')
+        print(f'[VAL] Epoch average loss: {batch_val_metrics["loss"]:.2f}')
+        print(f'[VAL] Epoch average miou: {batch_val_metrics["miou"]:.2f}\n')
     
-    plt.plot(epoch_losses) 
+    plt.plot(epoch_train_losses, label='Train loss', color='blue') 
+    plt.plot(epoch_val_losses, label='Validation loss', color='yellow') 
     plt.xlabel('Epoch') 
     plt.ylabel('Loss') 
     plt.title('Loss over Epochs') 
-    plt.show() 
+    plt.legend()
+    plt.show()
+
 
 def prepare_training(epochs, batch_size, subset_size, image_width, image_height):
     # TODO: Parametrize code so that it can be called from a driver
@@ -59,17 +97,17 @@ def main():
 
     # Misc parameters
     model_parameters_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\python_scripts_semseg\params/deeplabv3_model.pt'
-    fine_tune = True
+    fine_tune = False
 
     # Model training hyper-parameters configuration
-    ignored_label = 255
-    epochs = 10
+    ignored_label = 19
+    epochs = 12
     learning_rate = 0.0001
 
     # Data
     data_source = 'synthetic'
     batch_size = 4
-    subset_size = 400
+    subset_size = 500
     image_width = 512
     image_height = 256
 
@@ -86,6 +124,23 @@ def main():
     train_dataset = Subset(train_dataset, indices=range(subset_size))
     train_dataloader = DataLoader(
         dataset=train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=1
+    )
+
+    val_dataset = data.HybridDataset(
+        root_path=f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\{data_source}\\val',
+        input_dir='rgb',
+        target_dir='semantic_segmentation_mapped',
+        transform=torchvision.transforms.Compose([
+            torchvision.transforms.Resize((image_height, image_width))
+        ]),
+        type=data_source,
+        labels_mapping=None
+    )
+    val_dataloader = DataLoader(
+        dataset=val_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=1
@@ -113,7 +168,8 @@ def main():
     # Start training
     train(
         model=model, 
-        train_dataloader=train_dataloader, 
+        train_dataloader=train_dataloader,
+        val_dataloader=val_dataloader,
         epochs=epochs, 
         loss_function=loss_function, 
         optimizer=optimizer
