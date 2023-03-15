@@ -32,7 +32,9 @@ def find_weather_presets():
     rgx = re.compile('.+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)')
     name = lambda x: ' '.join(m.group(0) for m in rgx.finditer(x))
     presets = [x for x in dir(carla.WeatherParameters) if re.match('[A-Z].+', x)]
-    return [(getattr(carla.WeatherParameters, x), name(x)) for x in presets]
+    presets = ['ClearNight', 'ClearNoon', 'ClearSunset', 'CloudyNight', 'CloudyNoon', 'CloudySunset', 'Default', 'DustStorm', 'MidRainSunset', 'MidRainyNight', 'MidRainyNoon', 'SoftRainSunset', 'SoftRainNight', 'SoftRainNoon', 'WetCloudyNight', 'WetCloudySunset', 'WetCloudyNoon', 'WetNight', 'WetNoon', 'WetSunset']
+    presets = [(getattr(carla.WeatherParameters, x), name(x)) for x in presets]
+    return presets
 
 def get_actor_display_name(actor, truncate=250):
     name = ' '.join(actor.type_id.replace('_', '.').title().split('.')[1:])
@@ -66,9 +68,10 @@ class WorldManager(object):
         self.world = carla_world
         self.sync = args.sync
         self._ego = None
-        self.camera_manager = None
-        self.vehicles_manager = None
-        self.maps = ["Town05", "Town06", "Town07", "Town10HD"] # list(map(lambda x: x.split('/')[-1], self.client.get_available_maps()))
+        self.sensor_manager = None
+        self.vehicle_traffic_manager = None
+        self.pedestrian_traffic_manager = None
+        self.maps = ["Town10HD", "Town05", "Town06", "Town07"]
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
         self._actor_filter = args.filter
@@ -132,24 +135,31 @@ class WorldManager(object):
         self.world.tick()
 
     def _spawn_sensors(self):
-        if self.camera_manager is None: 
+        if self.sensor_manager is None: 
             if self._ego is not None:
-                self.camera_manager = SensorsManager(self.world, self._cam_width, self._cam_height)
+                self.sensor_manager = SensorsManager(self.world, self._cam_width, self._cam_height)
             else:
                 print('Ego vehicle spawn --> Sensors spawn.')
                 exit(-1)
-        self.camera_manager.transform_index = 0
-        self.camera_manager.spawn_sensors(self._ego)
+        self.sensor_manager.transform_index = 0
+        self.sensor_manager.spawn_sensors(self._ego)
 
     def _spawn_vehicles(self):
-        if self.vehicles_manager is None:
+        if self.vehicle_traffic_manager is None:
             if self._ego is not None:
             # TODO: Parametrize vehicle count
-                self.vehicles_manager = VehicleTrafficManager(self.world, vehicle_count=12)
+                self.vehicle_traffic_manager = VehicleTrafficManager(self.world, vehicle_count=12)
             else:
                 print('Ego vehicle spawn --> Sensors spawn.')
                 exit(-1)
-        self.vehicles_manager.spawn_vehicles(spawn_points=self.map_available_waypoints)
+        self.vehicle_traffic_manager.spawn_vehicles(spawn_points=self.map_available_waypoints)
+
+    def _spawn_pedestrians(self):
+        if self.pedestrian_traffic_manager is None:
+            self.pedestrian_traffic_manager = PedestrianTrafficManager(self.client, self.world)
+        self.pedestrian_traffic_manager.spawn_pedestrians(pedestrian_number=60, 
+                                                          pedestrian_crossing_perc=0.1,
+                                                          pedestrian_running_perc=0.1)
 
     def _despawn_ego(self):
         if self._ego is not None:
@@ -158,10 +168,13 @@ class WorldManager(object):
         self.world.tick()
 
     def _despawn_sensors(self):
-        self.camera_manager.despawn_sensors()
+        self.sensor_manager.despawn_sensors()
 
     def _despawn_vehicles(self):
-        self.vehicles_manager.despawn_vehicles()
+        self.vehicle_traffic_manager.despawn_vehicles()
+
+    def _despawn_pedestrians(self):
+        self.pedestrian_traffic_manager.despawn_pedestrians()
 
     def apply_settings(self):
         settings = self.world.get_settings()
@@ -177,13 +190,18 @@ class WorldManager(object):
             
     def spawn_actors(self):
         self._spawn_ego()
+        self._spawn_pedestrians()
         self._spawn_vehicles()
         self._spawn_sensors()
 
     def despawn_actors(self):
         self._despawn_sensors()
         self._despawn_vehicles()
+        self._despawn_pedestrians()
         self._despawn_ego()
+
+        print('Pedestrians left:\t', len(self.world.get_actors().filter("walker.*")))
+        print('Vehicles left:\t\t', len(self.world.get_actors().filter("vehicle.*")))
 
 # TODO: Implement random vehicle traffic
 class VehicleTrafficManager(object):
@@ -218,7 +236,7 @@ class VehicleTrafficManager(object):
 
             vehicle = None
             while vehicle is None:
-                spawn_point.location.z += 0.05
+                spawn_point.location.z += 0.01
                 vehicle = self.world.try_spawn_actor(vehicle_blueprint, spawn_point)
             self.spawned_vehicles += [vehicle]
     
@@ -227,7 +245,12 @@ class VehicleTrafficManager(object):
     def despawn_vehicles(self):
         for spawned_vehicle in self.spawned_vehicles:
             if spawned_vehicle is not None:
-                spawned_vehicle.destroy()
+                try:
+                    spawned_vehicle.destroy()
+                except:
+                    pass
+                finally:
+                    self.world.tick()
                 spawned_vehicle = None
         self.spawned_vehicles = []
         self.world.tick()
@@ -242,13 +265,15 @@ class PedestrianTrafficManager(object):
         self.client = client
         self.world = world
         self.pedestrian_actors = []
-        self.pedestrian_bps = random.shuffle(get_actor_blueprints(world, 'walker.pedestrian.*', 2))
+        self.pedestrian_actors_ids = []
         self.pedestrian_controller_bp = world.get_blueprint_library().find('controller.ai.walker')
         self.pedestrian_bp_index = 0
+        self.pedestrian_bps = get_actor_blueprints(world, 'walker.pedestrian.*', '2')
+        random.shuffle(self.pedestrian_bps)
         
     def _setup_pedestrian_spawn_data(self, spawn_point, pedestrian_running_perc):
         pedestrian_spawn_data = {
-            'bp': self.pedestrian_bps(self.pedestrian_bp_index),
+            'bp': self.pedestrian_bps[self.pedestrian_bp_index],
             'speed': None,
             'spawn_point': spawn_point
         }
@@ -277,7 +302,7 @@ class PedestrianTrafficManager(object):
         pedestrian_spawned_check_data_list = []
         for i in range(len(pedestrian_spawn_results)):
             if pedestrian_spawn_results[i].error:
-                print(pedestrian_spawn_results[i].error)
+                pass
             else:
                 pedestrian_spawned_check_data_list.append({
                     'id': pedestrian_spawn_results[i].actor_id,
@@ -298,12 +323,17 @@ class PedestrianTrafficManager(object):
         return self.client.apply_batch_sync(pedestrian_controller_spawn_command_batch, True)
     
     def _check_pedestrian_controller_spawn_results(self, pedestrian_spawn_data_list, pedestrian_controller_spawn_results):
-        pedestrian_controller_spawned_check_data_list = pedestrian_spawn_data_list.copy()
+        pedestrian_controller_spawned_check_data_list = []
         for i in range(len(pedestrian_controller_spawn_results)):
             if pedestrian_controller_spawn_results[i].error:
-                print(pedestrian_controller_spawn_results[i].error)
+                pass
             else:
-                pedestrian_controller_spawned_check_data_list[i]['con'] = pedestrian_controller_spawn_results[i].actor_id
+                pedestrian_controller_spawned_check_data_list.append({
+                    'con':pedestrian_controller_spawn_results[i].actor_id,
+                    'id': pedestrian_spawn_data_list[i]['id'],
+                    'speed': pedestrian_spawn_data_list[i]['speed']
+                })
+        return pedestrian_controller_spawned_check_data_list
         
     def _store_pedestrian_actors(self, pedestrian_spawn_data_list):
         pedestrian_related_ids = []
@@ -311,12 +341,15 @@ class PedestrianTrafficManager(object):
             pedestrian_related_ids.append(pedestrian_spawn_data_list[i]['con'])
             pedestrian_related_ids.append(pedestrian_spawn_data_list[i]['id'])
         self.pedestrian_actors = self.world.get_actors(pedestrian_related_ids)
+        self.pedestrian_actors_ids = pedestrian_related_ids
 
-    def _apply_pedestrian_control(self, pedestrian_crossing_perc):
-        pass
-
-    def _destroy_pedestrian(self):
-        pass
+    def _apply_pedestrian_control(self, pedestrian_spawn_data_list, pedestrian_crossing_perc):
+        self.world.set_pedestrians_cross_factor(pedestrian_crossing_perc)
+        for i in range(0, len(self.pedestrian_actors_ids), 2):
+            self.pedestrian_actors[i].start()
+            self.pedestrian_actors[i].go_to_location(self.world.get_random_location_from_navigation())
+            self.pedestrian_actors[i].set_max_speed(float(pedestrian_spawn_data_list[int(i/2)]['speed']))
+        self.world.tick()
 
     def spawn_pedestrians(self, pedestrian_number, pedestrian_crossing_perc, pedestrian_running_perc):
         spawn_points = []
@@ -327,11 +360,32 @@ class PedestrianTrafficManager(object):
                 spawn_point.location = spawn_point_location
                 spawn_points.append(spawn_point)
 
+        pedestrian_spawn_data_list = []
         for spawn_point in spawn_points:
-            self._spawn_pedestrian(spawn_point=spawn_point)
+            pedestrian_spawn_data_list.append(self._setup_pedestrian_spawn_data(spawn_point=spawn_point, pedestrian_running_perc=pedestrian_running_perc))
+
+        pedestrian_spawn_results = self._launch_pedestrian_spawn_command_batch(pedestrian_spawn_data_list)
+        pedestrian_spawned_check_data_list = self._check_pedestrian_spawn_results(pedestrian_spawn_data_list, pedestrian_spawn_results)
+
+        pedestrian_controller_spawn_results = self._launch_pedestrian_controller_spawn_command_batch(pedestrian_spawned_check_data_list)
+        pedestrian_controller_spawned_check_data_list = self._check_pedestrian_controller_spawn_results(pedestrian_spawned_check_data_list, pedestrian_controller_spawn_results)
         
-    def destroy_pedestrians(self):
-        pass
+        self._store_pedestrian_actors(pedestrian_controller_spawned_check_data_list)
+        self._apply_pedestrian_control(pedestrian_controller_spawned_check_data_list, pedestrian_crossing_perc)
+
+    def despawn_pedestrians(self):
+        for pedestrian_actor in self.pedestrian_actors:
+            if pedestrian_actor is not None:
+                try:
+                    pedestrian_actor.destroy()
+                except:
+                    pass
+                finally:
+                    self.world.tick()
+                pedestrian_actor = None
+        self.pedestrian_actors = []
+        self.pedestrian_actors_ids = []
+        self.world.tick()
 
 class SensorsManager(object):
     RESOLUTION_MULTIPLIER = 2.25
@@ -416,21 +470,20 @@ class SensorsManager(object):
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, 2]
             array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array_resized)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array_resized)
             SensorsManager.SEM_CURRENT_FRAME += 1
         elif data["name"] == 'rgb':
             array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, :3]
             array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array_resized)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array_resized)
             SensorsManager.RGB_CURRENT_FRAME += 1
-
 
 def simulation_loop(args):
     
     world = None
-    number_of_images = 400
+    number_of_images = 100
 
     client = carla.Client(args.host, args.port)
     client.set_timeout(200.0)
@@ -460,9 +513,9 @@ def simulation_loop(args):
 
         print('Map index:\t', map_index)
         print('Image index:\t', image_index)
-        print('Cameras:\t', len(world.camera_manager.queue_dict.items()))
+        print('Cameras:\t', len(world.sensor_manager.queue_dict.items()))
         
-        for queue_key, queue in world.camera_manager.queue_dict.items():
+        for queue_key, queue in world.sensor_manager.queue_dict.items():
             print(f'\t{queue_key} received images', queue.qsize())
             while not queue.empty():
                 SensorsManager.parse_image({'image': queue.get(), 'name': queue_key})
