@@ -6,6 +6,7 @@ import torchvision
 import torchvision.models.segmentation.deeplabv3 as dlv3
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
 from torch.utils.data import DataLoader
 from torch.utils.data import Subset
 from torchsummary import summary
@@ -59,6 +60,7 @@ def train(model, train_dataloader, val_dataloader, epochs, loss_function, optimi
     model.train()
     epoch_train_losses = []
     epoch_val_losses = []
+    epoch_val_mious = []
     for _ in tqdm(range(epochs), desc='Epoch progress'):
         batch_train_losses = train_epoch(
             model=model, 
@@ -74,6 +76,7 @@ def train(model, train_dataloader, val_dataloader, epochs, loss_function, optimi
         epoch_average_train_loss = np.mean(batch_train_losses)
         epoch_train_losses += [epoch_average_train_loss]
         epoch_val_losses += [batch_val_metrics['loss']]
+        epoch_val_mious += [batch_val_metrics['miou']]
 
         print(f'\n\n[TRAIN] Epoch average loss: {epoch_average_train_loss:.2f}')
         print(f'[VAL] Epoch average loss: {batch_val_metrics["loss"]:.2f}')
@@ -86,13 +89,32 @@ def train(model, train_dataloader, val_dataloader, epochs, loss_function, optimi
     plt.title('Loss over Epochs') 
     plt.legend()
     plt.show()
-
+ 
+    plt.plot(epoch_val_mious, label='Validation mIoU', color='green') 
+    plt.xlabel('Epoch') 
+    plt.ylabel('mIoU') 
+    plt.title('mIoU over Epochs') 
+    plt.legend()
+    plt.show()
 
 def prepare_training(epochs, batch_size, subset_size, image_width, image_height):
     # TODO: Parametrize code so that it can be called from a driver
     pass
 
 def main():
+
+    argparser = argparse.ArgumentParser(description='DeepLabV3 - Train')
+    argparser.add_argument('--fine-tune', action='store_true', help='Enable fine-tuning')
+    argparser.add_argument('--fine-tune-model-path', default='./params/deeplabv3_model.pt', help='Path to the model to be fine-tuned')
+    argparser.add_argument('--data-source', type=str, choices=['real', 'synthetic'], help='Data acquisition source')
+    argparser.add_argument('--data-subset-size', type=int, help='Data subset size')
+    argparser.add_argument('--epochs', type=int, default=8, help='Number of training epochs')
+    argparser.add_argument('--learning-rate', type=float, help='Training learning rate')
+    argparser.add_argument('--batch-size', type=int, help='Size of a training data batch')
+    argparser.add_argument('--image-width', type=int, help='Width of an image')
+    argparser.add_argument('--image-height', type=int, help='Height of an image')
+    args = argparser.parse_args()
+
     torch.cuda.empty_cache()
 
     # Misc parameters
@@ -105,9 +127,9 @@ def main():
     learning_rate = 0.0001
 
     # Data
-    data_source = 'synthetic'
+    data_source = 'real'
     batch_size = 4
-    subset_size = 500
+    subset_size = 2500
     image_width = 512
     image_height = 256
 
