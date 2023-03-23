@@ -7,6 +7,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torchvision.transforms.functional as tf
+import torchvision
 import cv2
 
 class SemanticLabelMapper():
@@ -92,12 +93,13 @@ class SemanticLabelMapper():
 
 class HybridDataset(Dataset):
 
-    def __init__(self, root_path, input_dir, target_dir, transform=None, type='real', labels_mapping=None) -> None:
+    def __init__(self, root_path, input_dir, target_dir, ipt_transform=None, tgt_transform=None, type='real', labels_mapping=None) -> None:
         super(HybridDataset, self).__init__()
         self.root_path = root_path
         self.input_data = input_dir
         self.target_data = target_dir
-        self.transform = transform
+        self.ipt_transform = ipt_transform
+        self.tgt_transform = tgt_transform
         self.type = type
         self.labels_mapping = labels_mapping
     
@@ -113,8 +115,11 @@ class HybridDataset(Dataset):
         img_path_input_patch = os.path.join(self.root_path, self.input_data, f"{self.type}_rgb_{index}.png")
         img_path_tgt_patch = os.path.join(self.root_path, self.target_data, f"{self.type}_semantic_segmentation_{index}.png")
         
-        ipt_patch = np.array(Image.open(img_path_input_patch, 'r')).astype(np.float32)
+        ipt_patch = np.array(Image.open(img_path_input_patch, 'r'))
         tgt_patch = np.array(Image.open(img_path_tgt_patch, 'r',)).astype(np.int_)
+
+        ipt_patch = torchvision.transforms.ToTensor()(ipt_patch)
+        tgt_patch = tf.to_tensor(tgt_patch)
 
         if self.labels_mapping is not None:
             try:
@@ -125,14 +130,13 @@ class HybridDataset(Dataset):
         # tgt_patch.astype(np.float32)
         np.expand_dims(tgt_patch, axis=0)
             
-        ipt_patch_tensor = tf.to_tensor(ipt_patch)
-        tgt_patch_tensor = tf.to_tensor(tgt_patch)
-        
-        if self.transform:
-            ipt_patch_tensor = self.transform(ipt_patch_tensor)
-            tgt_patch_tensor = self.transform(tgt_patch_tensor)
+        if self.ipt_transform:
+            ipt_patch = self.ipt_transform(ipt_patch)
+
+        if self.tgt_transform:
+            tgt_patch = self.tgt_transform(tgt_patch)
             
-        return ipt_patch_tensor, tgt_patch_tensor
+        return ipt_patch, tgt_patch
     
 # Helper function to show a batch
 def show_landmarks_batch(dataloader):
@@ -171,19 +175,19 @@ def test():
     dataloader = DataLoader(custom_real_dataset, batch_size=4, shuffle=False)
     show_landmarks_batch(dataloader)
 
-def perform_image_mapping():
-    src_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\val\semantic_segmentation'
-    dst_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\val\semantic_segmentation_mapped'
-    slm = SemanticLabelMapper('cityscapes_to_common')
+def perform_image_mapping(src_path, dst_path, mapping_type):
+    slm = SemanticLabelMapper(mapping_type)
     slm.map_from_dir(src_path=src_path, dst_path=dst_path, extension='.png')
     
 def visualize_class_distribution():
+    dataset_path = r'G:\My Drive\Master IVA\Master Thesis\Datasets\synthetic\train'
     dataset = HybridDataset(
-        root_path=r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\train',
+        root_path=dataset_path,
         input_dir='rgb',
         target_dir='semantic_segmentation_mapped',
-        transform=None,
-        type='real',
+        ipt_transform=None,
+        tgt_transform=None,
+        type='synthetic',
         labels_mapping=None)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=False)
 
@@ -199,7 +203,7 @@ def visualize_class_distribution():
     for _, target_batch in dataloader:
         print(batch_idx)
         for target_map in target_batch:
-            flattened_target_map = (torch.flatten(target_map) * 255).long()
+            flattened_target_map = (torch.flatten(target_map)).long()
             labels_count = torch.bincount(flattened_target_map)
             for i in range(len(labels_count)):
                 if labels_count[i] != 0:
@@ -224,6 +228,11 @@ def visualize_class_distribution():
 
     plt.show()
 
+
+src_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\val\semantic_segmentation'
+dst_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\val\semantic_segmentation_mapped'
+mapping_type = 'carla_to_common'
+
 # test()
-# perform_image_mapping()
+# perform_image_mapping(src_path, dst_path, mapping_type)
 # visualize_class_distribution()
