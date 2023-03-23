@@ -71,7 +71,7 @@ class WorldManager(object):
         self.sensor_manager = None
         self.vehicle_traffic_manager = None
         self.pedestrian_traffic_manager = None
-        self.maps = ["Town10HD", "Town05", "Town06", "Town07"]
+        self.maps = ["Town10HD", "Town05", "Town06", "Town07", "Town01", "Town02"]
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
         self._actor_filter = args.filter
@@ -94,7 +94,7 @@ class WorldManager(object):
         self.world = self.client.get_world()
         self.map = self.world.get_map()
         try:
-            self.map_available_waypoints = self.map.generate_waypoints(3.0)
+            self.map_available_waypoints = self.map.generate_waypoints(8.0)
         except RuntimeError as error:
             print('RuntimeError: {}'.format(error))
             print('  The server could not send the OpenDRIVE (.xodr) file:')
@@ -157,9 +157,9 @@ class WorldManager(object):
     def _spawn_pedestrians(self):
         if self.pedestrian_traffic_manager is None:
             self.pedestrian_traffic_manager = PedestrianTrafficManager(self.client, self.world)
-        self.pedestrian_traffic_manager.spawn_pedestrians(pedestrian_number=60, 
-                                                          pedestrian_crossing_perc=0.1,
-                                                          pedestrian_running_perc=0.1)
+        self.pedestrian_traffic_manager.spawn_pedestrians(pedestrian_number=random.randrange(100, 150, 1),
+                                                          pedestrian_crossing_perc=random.random() * 0.025,
+                                                          pedestrian_running_perc=random.random() * 0.05)
 
     def _despawn_ego(self):
         if self._ego is not None:
@@ -388,7 +388,6 @@ class PedestrianTrafficManager(object):
         self.world.tick()
 
 class SensorsManager(object):
-    RESOLUTION_MULTIPLIER = 2.25
     SEM_CURRENT_FRAME = 0
     RGB_CURRENT_FRAME = 0
 
@@ -396,8 +395,8 @@ class SensorsManager(object):
         self._parent = None
         self.world = world
         self.queue_dict = {}
-        self.width = SensorsManager.RESOLUTION_MULTIPLIER * width
-        self.height = SensorsManager.RESOLUTION_MULTIPLIER * height
+        self.width = width
+        self.height = height
         self.bp_library = None
         self.sensor_types = [
             ['sensor.camera.rgb', cc.Raw, 'Camera RGB', {}],
@@ -442,6 +441,10 @@ class SensorsManager(object):
         vehicle_bound_z = 0.5 + self._parent.bounding_box.extent.z
         camera_transform = carla.Transform(carla.Location(x=+0.8*vehicle_bound_x, y=+0.0*vehicle_bound_y, z=1.3*vehicle_bound_z))
 
+        camera_transform.rotation.pitch -= 5.0
+        camera_transform.rotation.yaw +=  random.uniform(-2.0, 2.0)
+        camera_transform.rotation.roll += random.uniform(-2.0, 2.0)
+
         self.sensor_rgb = self._parent.get_world().spawn_actor(
                 self.bp_sensor_rgb,
                 camera_transform,
@@ -469,21 +472,19 @@ class SensorsManager(object):
             array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, 2]
-            array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array_resized)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array)
             SensorsManager.SEM_CURRENT_FRAME += 1
         elif data["name"] == 'rgb':
             array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, :3]
-            array_resized = cv2.resize(array, (int(data["image"].width / SensorsManager.RESOLUTION_MULTIPLIER), int(data["image"].height / SensorsManager.RESOLUTION_MULTIPLIER)))
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array_resized)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array)
             SensorsManager.RGB_CURRENT_FRAME += 1
 
 def simulation_loop(args):
     
     world = None
-    number_of_images = 100
+    number_of_images = 2000
 
     client = carla.Client(args.host, args.port)
     client.set_timeout(200.0)
