@@ -79,11 +79,15 @@ class WorldManager(object):
         self.sensor_manager = None
         self.vehicle_traffic_manager = None
         self.pedestrian_traffic_manager = None
+        # Training data maps
         # self.maps = ["Town01"]
         # self.maps = ["Town02"]
         # self.maps = ["Town03"]
-        self.maps = ["Town07"]
+        # self.maps = ["Town07"]
         # self.maps = ["Town10HD"]
+        # Validation data maps
+        self.maps = ["Town06"]
+        # self.maps = ["Town04"]
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
         self._actor_filter = args.filter
@@ -448,8 +452,8 @@ class PedestrianTrafficManager(object):
         self.pedestrian_actors_ids = []
 
 class SensorsManager(object):
-    SEM_CURRENT_FRAME = 1500
-    RGB_CURRENT_FRAME = 1500
+    SEM_CURRENT_FRAME = 205
+    RGB_CURRENT_FRAME = 205
 
     def __init__(self, world, width, height):
         self._parent = None
@@ -534,19 +538,19 @@ class SensorsManager(object):
             array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, 2]
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\train\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array)
             SensorsManager.SEM_CURRENT_FRAME += 1
         elif data["name"] == 'rgb':
             array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, :3]
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\train\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array)
             SensorsManager.RGB_CURRENT_FRAME += 1
 
 def simulation_loop(args):
     
     world = None
-    number_of_images = 500
+    number_of_images = 95
 
     client = carla.Client(args.host, args.port)
     client.set_timeout(200.0)

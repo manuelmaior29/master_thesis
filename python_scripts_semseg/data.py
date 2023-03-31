@@ -19,55 +19,49 @@ class SemanticLabelMapper():
             2: 'building',
             3: 'wall',
             4: 'fence',
-            5: 'pole',
-            6: 'trafficlight',
-            7: 'trafficsign',
-            8: 'vegetation',
-            9: 'terrain',
-            10: 'sky',
-            11: 'pedestrian',
-            12: 'rider',
-            13: 'car',
-            14: 'truck',
-            15: 'bus',
-            16: 'train',
-            17: 'motorcycle',
-            18: 'bicycle',
-            19: 'any'
+            5: 'trafficlight',
+            6: 'trafficsign',
+            7: 'vegetation',
+            8: 'terrain',
+            9: 'pedestrian',
+            10: 'rider',
+            11: 'car',
+            12: 'truck',
+            13: 'bus',
+            14: 'motorcycle',
+            15: 'bicycle',
+            16: 'background'
         }
     }
 
     ID_TO_COLOR = {
         'common': {
-            0: [70, 70, 70],
-            1: [100, 40, 40],
-            2: [55, 90, 80],
-            3: [220, 20, 60],
-            4: [153, 153, 153],
-            5: [157, 234, 50],
-            6: [128, 64, 128],
-            7: [244, 35, 232],
-            8: [107, 142, 35],
-            9: [0, 0, 142],
-            10: [102, 102, 156],
-            11: [220, 220, 0],
-            12: [70, 130, 180],
-            13: [81, 0, 81],
-            14: [150, 100, 100],
-            15: [230, 150, 140],
-            16: [180, 165, 180],
-            17: [250, 170, 30],
-            18: [110, 190, 160],
-            19: [145, 170, 100]
+            0: (70, 70, 70),
+            1: (100, 40, 40),
+            2: (55, 90, 80),
+            3: (220, 20, 60),
+            4: (153, 153, 153),
+            5: (157, 234, 50),
+            6: (128, 64, 128),
+            7: (244, 35, 232),
+            8: (107, 142, 35),
+            9: (0, 0, 142),
+            10: (102, 102, 156),
+            11: (220, 220, 0),
+            12: (70, 130, 180),
+            13: (81, 0, 81),
+            14: (150, 100, 100),
+            15: (230, 150, 140),
+            16: (0, 0, 0)
         }
     }
 
     MAPPING = {
         'carla_to_common': [
-            19, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 19, 19, 19, 0, 19, 19, 19, 19
+            16, 0, 1, 2, 3, 4, 16, 5, 6, 7, 8, 16, 9, 10, 11, 12, 13, 16, 14, 15, 16, 16, 16, 16, 0, 16, 16, 16, 16
         ],
         'cityscapes_to_common': [
-            19, 19, 19, 19, 19, 19, 19, 0, 1, 19, 19, 2, 3, 4, 19, 19, 19, 5, 19, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 19, 16, 17, 18, 19   
+            16, 16, 16, 16, 16, 16, 16, 0, 1, 16, 16, 2, 3, 4, 16, 16, 16, 16, 16, 5, 6, 7, 8, 16, 9, 10, 11, 12, 13, 16, 16, 16, 14, 15, 16   
         ]
     }
 
@@ -180,14 +174,14 @@ def perform_image_mapping(src_path, dst_path, mapping_type):
     slm.map_from_dir(src_path=src_path, dst_path=dst_path, extension='.png')
     
 def visualize_class_distribution():
-    dataset_path = r'G:\My Drive\Master IVA\Master Thesis\Datasets\synthetic\train'
+    dataset_path = r'G:\My Drive\Master IVA\Master Thesis\Datasets\real\train'
     dataset = HybridDataset(
         root_path=dataset_path,
         input_dir='rgb',
         target_dir='semantic_segmentation_mapped',
         ipt_transform=None,
         tgt_transform=None,
-        type='synthetic',
+        type='real',
         labels_mapping=None)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=False)
 
