@@ -3,15 +3,25 @@ import numpy as np
 import sys
 from sklearn.metrics import confusion_matrix
 
-def measure_performance(predictions, targets, num_classes, ignore_label=None, smooth=sys.float_info.epsilon):
+
+def compute_confusion_matrix(predictions, targets, num_classes):
     confusion_mat = confusion_matrix(targets.flatten(), predictions.flatten(), labels=range(num_classes))
+    return confusion_mat
+
+def measure_performance(confusion_mat, num_classes, ignore_label=None, smooth=sys.float_info.epsilon):
     ious = []
+    classes_with_missing_representatives = []
 
     for c in range(num_classes):
         if c != ignore_label:
             intersection = confusion_mat[c, c]
             union = confusion_mat[c, :].sum() + confusion_mat[:, c].sum() - intersection
-            ious.append((intersection + smooth) / (union + smooth) if union > 0 else 0)
+
+            if confusion_mat[c, :].sum() == 0:
+                classes_with_missing_representatives += [c]
+                ious.append(0)
+            else:
+                ious.append((intersection + smooth) / (union + smooth) if union > 0 else 0)
         else:
             ious.append(0)
 
@@ -20,9 +30,12 @@ def measure_performance(predictions, targets, num_classes, ignore_label=None, sm
 
     if ignore_label != None:
         miou -= ious[ignore_label]
-        miou /= (num_classes - 1)
+        miou /= (num_classes - 1 - len(classes_with_missing_representatives))
     else:
-        miou /= num_classes
+        miou /= (num_classes - len(classes_with_missing_representatives))
+
+    for c in classes_with_missing_representatives:
+        ious[c] = -1
 
     return miou, ious
 
