@@ -16,6 +16,8 @@ def measure_performance(predictions, targets, num_classes, ignore_label=None, sm
             ious.append(0)
 
     miou = np.array(ious).sum()
+    ious = np.array(ious)
+
     if ignore_label != None:
         miou -= ious[ignore_label]
         miou /= (num_classes - 1)
