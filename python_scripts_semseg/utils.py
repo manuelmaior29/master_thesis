@@ -4,8 +4,8 @@ import sys
 from sklearn.metrics import confusion_matrix
 
 
-def compute_confusion_matrix(predictions, targets, num_classes):
-    confusion_mat = confusion_matrix(targets.flatten(), predictions.flatten(), labels=range(num_classes))
+def compute_confusion_matrix(targets, predictions, num_classes):
+    confusion_mat = confusion_matrix(y_true=targets.flatten(), y_pred=predictions.flatten(), labels=range(num_classes))
     return confusion_mat
 
 def measure_performance(confusion_mat, num_classes, ignore_label=None, smooth=sys.float_info.epsilon):
