@@ -33,7 +33,7 @@ def find_weather_presets():
     rgx = re.compile('.+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)')
     name = lambda x: ' '.join(m.group(0) for m in rgx.finditer(x))
     presets = [x for x in dir(carla.WeatherParameters) if re.match('[A-Z].+', x)]
-    presets = ['ClearNight', 'ClearNoon', 'ClearSunset', 'CloudyNight', 'CloudyNoon', 'CloudySunset', 'Default', 'DustStorm', 'SoftRainSunset', 'SoftRainNight', 'SoftRainNoon', 'WetCloudyNight', 'WetCloudySunset', 'WetCloudyNoon', 'WetNight', 'WetNoon', 'WetSunset']
+    presets = ['Default']
     presets = [(getattr(carla.WeatherParameters, x), name(x)) for x in presets]
     return presets
 
@@ -82,12 +82,10 @@ class WorldManager(object):
         # Training data maps
         # self.maps = ["Town01"]
         # self.maps = ["Town02"]
-        # self.maps = ["Town03"]
-        # self.maps = ["Town07"]
-        # self.maps = ["Town10HD"]
-        # Validation data maps
-        self.maps = ["Town06"]
-        # self.maps = ["Town04"]
+        # self.maps = ["Town03"] # more vehicles?
+        # self.maps = ["Town04"] # might need to be unused OR more vehicles + more pedestrians (too few vehicles)
+        self.maps = ["Town10HD"]
+        # self.maps = ["Town05"]*
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
         self._actor_filter = args.filter
@@ -168,7 +166,7 @@ class WorldManager(object):
         if self.vehicle_traffic_manager is None:
             if self._ego is not None:
             # TODO: Parametrize vehicle count
-                self.vehicle_traffic_manager = VehicleTrafficManager(self.world, vehicle_count=75)
+                self.vehicle_traffic_manager = VehicleTrafficManager(self.world, vehicle_count=40)
             else:
                 print('Ego vehicle spawn --> Sensors spawn.')
                 exit(-1)
@@ -185,7 +183,7 @@ class WorldManager(object):
 
         self.pedestrian_traffic_manager.world = self.world
         self.pedestrian_traffic_manager.client = self.client
-        self.pedestrian_traffic_manager.spawn_pedestrians(pedestrian_number=random.randrange(20, 40, 1),
+        self.pedestrian_traffic_manager.spawn_pedestrians(pedestrian_number=random.randrange(15, 20, 1),
                                                           pedestrian_crossing_perc=random.random() * 0.001,
                                                           pedestrian_running_perc=random.random() * 0.005,
                                                           ego_sensor_transform=ego_transform,
@@ -452,8 +450,8 @@ class PedestrianTrafficManager(object):
         self.pedestrian_actors_ids = []
 
 class SensorsManager(object):
-    SEM_CURRENT_FRAME = 205
-    RGB_CURRENT_FRAME = 205
+    SEM_CURRENT_FRAME = 2500
+    RGB_CURRENT_FRAME = 2500
 
     def __init__(self, world, width, height):
         self._parent = None
@@ -508,8 +506,8 @@ class SensorsManager(object):
         camera_transform = carla.Transform(carla.Location(x=+0.8*vehicle_bound_x, y=+0.0*vehicle_bound_y, z=1.3*vehicle_bound_z))
 
         camera_transform.rotation.pitch -= 2.5
-        camera_transform.rotation.yaw +=  random.uniform(-2.0, 2.0)
-        camera_transform.rotation.roll += random.uniform(-2.0, 2.0)
+        # camera_transform.rotation.yaw +=  random.uniform(-2.0, 2.0)
+        # camera_transform.rotation.roll += random.uniform(-2.0, 2.0)
 
         self.sensor_rgb = self._parent.get_world().spawn_actor(
                 self.bp_sensor_rgb,
@@ -538,19 +536,19 @@ class SensorsManager(object):
             array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, 2]
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\train\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.SEM_CURRENT_FRAME}.png', array)
             SensorsManager.SEM_CURRENT_FRAME += 1
         elif data["name"] == 'rgb':
             array = np.frombuffer(data["image"].raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data["image"].height, data["image"].width, 4))
             array = array[:, :, :3]
-            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\val\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array)
+            cv2.imwrite(f'C:\\Users\\Manuel\\Projects\\GitHub_Repositories\\master_thesis\\datasets\\synthetic\\train\\{data["name"]}\\synthetic_{data["name"]}_{SensorsManager.RGB_CURRENT_FRAME}.png', array)
             SensorsManager.RGB_CURRENT_FRAME += 1
 
 def simulation_loop(args):
     
     world = None
-    number_of_images = 95
+    number_of_images = 500
 
     client = carla.Client(args.host, args.port)
     client.set_timeout(200.0)

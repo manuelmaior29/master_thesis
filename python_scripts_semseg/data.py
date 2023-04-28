@@ -58,9 +58,11 @@ class SemanticLabelMapper():
 
     MAPPING = {
         'carla_to_common': [
+        #   0   1  2  3  4  5  6   7  8  9  10 11  12 13  14  15  16  17  18  19  20  21  22  23  24 25  26  27  28
             16, 0, 1, 2, 3, 4, 16, 5, 6, 7, 8, 16, 9, 10, 11, 12, 13, 16, 14, 15, 16, 16, 16, 16, 0, 16, 16, 16, 16
         ],
         'cityscapes_to_common': [
+        #   0   1   2   3   4   5   6   7  8  9   10  11 12 13 14  15  16  17  18  19 20 21 22 23  24 25  26  27  28  29  30  31  32  33  34    
             16, 16, 16, 16, 16, 16, 16, 0, 1, 16, 16, 2, 3, 4, 16, 16, 16, 16, 16, 5, 6, 7, 8, 16, 9, 10, 11, 12, 13, 16, 16, 16, 14, 15, 16   
         ]
     }
@@ -157,31 +159,18 @@ def show_landmarks_batch(dataloader):
         plt.plot()
         plt.show()
 
-def test():
-    custom_real_dataset = HybridDataset(
-        root_path=r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\real\train',
-        input_dir='rgb',
-        target_dir='semantic_segmentation',
-        transform=None,
-        type='real',
-        labels_mapping='cityscapes_to_common')
-
-    dataloader = DataLoader(custom_real_dataset, batch_size=4, shuffle=False)
-    show_landmarks_batch(dataloader)
-
 def perform_image_mapping(src_path, dst_path, mapping_type):
     slm = SemanticLabelMapper(mapping_type)
     slm.map_from_dir(src_path=src_path, dst_path=dst_path, extension='.png')
     
-def visualize_class_distribution():
-    dataset_path = r'G:\My Drive\Master IVA\Master Thesis\Datasets\real\train'
+def visualize_class_distribution(dataset_path, type):
     dataset = HybridDataset(
         root_path=dataset_path,
         input_dir='rgb',
         target_dir='semantic_segmentation_mapped',
         ipt_transform=None,
         tgt_transform=None,
-        type='real',
+        type=type,
         labels_mapping=None)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=False)
 
@@ -222,11 +211,11 @@ def visualize_class_distribution():
 
     plt.show()
 
-
-src_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\val\semantic_segmentation'
-dst_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\val\semantic_segmentation_mapped'
+src_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\train\semantic_segmentation'
+dst_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\train\semantic_segmentation_mapped'
 mapping_type = 'carla_to_common'
-
-# test()
 # perform_image_mapping(src_path, dst_path, mapping_type)
-# visualize_class_distribution()
+
+type = 'synthetic'
+dataset_path = r'C:\Users\Manuel\Projects\GitHub_Repositories\master_thesis\datasets\synthetic\train'
+# visualize_class_distribution(dataset_path=dataset_path, type=type)
